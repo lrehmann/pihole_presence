@@ -1,33 +1,36 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    DOMAIN,
+    CONF_AWAY_TIME,
     CONF_HOST,
     CONF_SCAN_INTERVAL,
-    CONF_AWAY_TIME,
+    CONF_STALE_DEVICE_DAYS,
+    DEFAULT_AWAY_TIME,
     DEFAULT_HOST,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_AWAY_TIME,
+    DEFAULT_STALE_DEVICE_DAYS,
+    DOMAIN,
 )
 from .coordinator import PiholeUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[str] = ["sensor", "device_tracker"]
+PLATFORMS: list[str] = ["device_tracker"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Pi‑hole DHCP Presence from a UI config entry."""
-    host = entry.data.get(CONF_HOST, DEFAULT_HOST)
-    scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-    away_time = entry.data.get(CONF_AWAY_TIME, DEFAULT_AWAY_TIME)
+    """Set up Pi-hole Presence from a UI config entry."""
+    data = {**entry.data, **entry.options}
+    host = data.get(CONF_HOST, DEFAULT_HOST)
+    scan_interval = data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    away_time = data.get(CONF_AWAY_TIME, DEFAULT_AWAY_TIME)
+    stale_device_days = data.get(CONF_STALE_DEVICE_DAYS, DEFAULT_STALE_DEVICE_DAYS)
 
-    coordinator = PiholeUpdateCoordinator(hass, host, scan_interval)
+    coordinator = PiholeUpdateCoordinator(hass, host, scan_interval, stale_device_days)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
