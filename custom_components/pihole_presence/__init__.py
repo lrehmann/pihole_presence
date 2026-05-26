@@ -7,9 +7,13 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_AWAY_TIME,
+    CONF_API_MODE,
+    CONF_API_TOKEN,
     CONF_HOST,
+    CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_STALE_DEVICE_DAYS,
+    DEFAULT_API_MODE,
     DEFAULT_AWAY_TIME,
     DEFAULT_HOST,
     DEFAULT_SCAN_INTERVAL,
@@ -29,8 +33,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval = data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     away_time = data.get(CONF_AWAY_TIME, DEFAULT_AWAY_TIME)
     stale_device_days = data.get(CONF_STALE_DEVICE_DAYS, DEFAULT_STALE_DEVICE_DAYS)
+    password = data.get(CONF_PASSWORD, "")
+    api_token = data.get(CONF_API_TOKEN, "")
+    api_mode = data.get(CONF_API_MODE, DEFAULT_API_MODE)
 
-    coordinator = PiholeUpdateCoordinator(hass, host, scan_interval, stale_device_days)
+    coordinator = PiholeUpdateCoordinator(
+        hass,
+        host,
+        scan_interval,
+        stale_device_days,
+        password=password,
+        api_token=api_token,
+        api_mode=api_mode,
+    )
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {

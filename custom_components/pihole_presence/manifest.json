@@ -1,9 +1,9 @@
 {
   "domain": "pihole_presence",
   "name": "Pi‑hole Presence",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "iot_class": "local_polling",
-  "documentation": "https://github.com/lrehmann/pihole_dhcp",
+  "documentation": "https://github.com/lrehmann/pihole_presence",
   "requirements": [],
   "dependencies": [],
   "codeowners": ["@lrehmann"],

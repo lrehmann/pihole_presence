@@ -22,7 +22,10 @@ For existing installs with a large old registry, remove the old diagnostic senso
   Ignores Pi-hole network rows whose last DNS query is older than the configured stale-device threshold. The default is 30 days.
 
 * **Efficient Polling**
-  Fetches only two endpoints: `/api/dhcp/leases` and `/api/network/devices`.
+  Uses the Pi-hole v6 API when available and falls back to the pre-v6 PHP network endpoint for older installs.
+
+* **Authenticated Pi-hole Support**
+  Supports Pi-hole v6 session authentication and the legacy pre-v6 API token.
 
 ## Installation
 
@@ -46,6 +49,9 @@ After restart, go to **Settings -> Devices & Services -> Add Integration** and s
 | Option | Description | Default |
 | --- | --- | --- |
 | **Host/IP** | Pi-hole API base URL, such as `http://pi.hole` or an IP address | `http://pi.hole` |
+| **API Mode** | API selection. `Auto detect` tries Pi-hole v6 first, then the pre-v6 PHP API | `Auto detect` |
+| **Password** | Optional Pi-hole v6 web password. Used to request a session from `/api/auth` when the v6 API requires authentication | empty |
+| **API Token** | Optional pre-v6 Pi-hole API token. Used as `auth` with `/admin/api_db.php?network` | empty |
 | **Poll Frequency (s)** | Seconds between API polls | `30` |
 | **Consider Away (s)** | Seconds without a DNS query before a device is `not_home` | `900` |
 | **Stale Device Days** | Ignore devices with no DNS query within this many days | `30` |
@@ -61,6 +67,8 @@ Each tracker includes attributes for diagnostics instead of creating separate pe
 ## Troubleshooting
 
 * **No entities created:** Check the Pi-hole API base URL and network connectivity.
+* **Unauthorized on Pi-hole v6:** Add the Pi-hole web password in integration options.
+* **Older Pi-hole with web password enabled:** Add the pre-v6 API token in integration options, or force API Mode to `Pi-hole pre-v6 PHP API`.
 * **Duplicate devices:** Ensure other integrations do not use conflicting MAC connections, then clear stale device registry entries if needed.
 * **Presence always away:** Verify the away threshold and that the device is actually making DNS queries through Pi-hole.
 

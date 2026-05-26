@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.const import CONF_HOST
 
 from .const import (
+    API_MODE_OPTIONS,
     CONF_AWAY_TIME,
+    CONF_API_MODE,
+    CONF_API_TOKEN,
+    CONF_HOST,
+    CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     CONF_STALE_DEVICE_DAYS,
+    DEFAULT_API_MODE,
     DEFAULT_AWAY_TIME,
     DEFAULT_HOST,
     DEFAULT_SCAN_INTERVAL,
@@ -15,20 +20,39 @@ from .const import (
     DOMAIN,
 )
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
-        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
-            int, vol.Range(min=5)
-        ),
-        vol.Required(CONF_AWAY_TIME, default=DEFAULT_AWAY_TIME): vol.All(
-            int, vol.Range(min=30)
-        ),
-        vol.Required(
-            CONF_STALE_DEVICE_DAYS, default=DEFAULT_STALE_DEVICE_DAYS
-        ): vol.All(int, vol.Range(min=1)),
-    }
-)
+
+def _data_schema(defaults: dict | None = None) -> vol.Schema:
+    defaults = defaults or {}
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_HOST, default=defaults.get(CONF_HOST, DEFAULT_HOST)
+            ): str,
+            vol.Required(
+                CONF_API_MODE, default=defaults.get(CONF_API_MODE, DEFAULT_API_MODE)
+            ): vol.In(API_MODE_OPTIONS),
+            vol.Optional(
+                CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")
+            ): str,
+            vol.Optional(
+                CONF_API_TOKEN, default=defaults.get(CONF_API_TOKEN, "")
+            ): str,
+            vol.Required(
+                CONF_SCAN_INTERVAL,
+                default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            ): vol.All(int, vol.Range(min=5)),
+            vol.Required(
+                CONF_AWAY_TIME, default=defaults.get(CONF_AWAY_TIME, DEFAULT_AWAY_TIME)
+            ): vol.All(int, vol.Range(min=30)),
+            vol.Required(
+                CONF_STALE_DEVICE_DAYS,
+                default=defaults.get(CONF_STALE_DEVICE_DAYS, DEFAULT_STALE_DEVICE_DAYS),
+            ): vol.All(int, vol.Range(min=1)),
+        }
+    )
+
+
+STEP_USER_DATA_SCHEMA = _data_schema()
 
 
 class PiholePresenceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -68,25 +92,5 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         data = {**self.config_entry.data, **self.config_entry.options}
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_HOST, default=data.get(CONF_HOST, DEFAULT_HOST)
-                    ): str,
-                    vol.Required(
-                        CONF_SCAN_INTERVAL,
-                        default=data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
-                    ): vol.All(int, vol.Range(min=5)),
-                    vol.Required(
-                        CONF_AWAY_TIME,
-                        default=data.get(CONF_AWAY_TIME, DEFAULT_AWAY_TIME),
-                    ): vol.All(int, vol.Range(min=30)),
-                    vol.Required(
-                        CONF_STALE_DEVICE_DAYS,
-                        default=data.get(
-                            CONF_STALE_DEVICE_DAYS, DEFAULT_STALE_DEVICE_DAYS
-                        ),
-                    ): vol.All(int, vol.Range(min=1)),
-                }
-            ),
+            data_schema=_data_schema(data),
         )

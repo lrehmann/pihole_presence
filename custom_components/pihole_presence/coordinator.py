@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -13,6 +14,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
+    API_MODE_AUTO,
+    API_MODE_LEGACY,
+    API_MODE_OPTIONS,
+    API_MODE_V6,
     ATTR_DHCP_EXPIRES,
     ATTR_FIRST_SEEN,
     ATTR_INTERFACE,
@@ -24,7 +29,9 @@ from .const import (
     ATTR_NAME,
     ATTR_NUM_QUERIES,
     ATTR_PRIMARY_IP,
+    AUTH_ENDPOINT,
     DEVICES_ENDPOINT,
+    LEGACY_NETWORK_ENDPOINT,
     LEASES_ENDPOINT,
 )
 
@@ -70,6 +77,26 @@ def _clean_ip(value: Any) -> str | None:
     return str(ip)
 
 
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
+
+
+class PiholeApiError(Exception):
+    """Base Pi-hole API error."""
+
+
+class PiholeAuthError(PiholeApiError):
+    """Pi-hole rejected the configured credentials."""
+
+
+class PiholeNotFoundError(PiholeApiError):
+    """The requested Pi-hole API endpoint does not exist."""
+
+
 class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Fetch and normalize Pi-hole network device data."""
 
@@ -79,9 +106,17 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         host: str,
         scan_interval: int,
         stale_device_days: int,
+        password: str | None = None,
+        api_token: str | None = None,
+        api_mode: str = API_MODE_AUTO,
     ):
         self._host = host.rstrip("/")
         self._stale_after = timedelta(days=stale_device_days)
+        self._password = (password or "").strip()
+        self._api_token = (api_token or "").strip()
+        self._api_mode = api_mode if api_mode in API_MODE_OPTIONS else API_MODE_AUTO
+        self._sid: str | None = None
+        self._sid_valid_until: float | None = None
         self._session = async_get_clientsession(hass)
         super().__init__(
             hass,
@@ -90,28 +125,165 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=scan_interval),
         )
 
-    async def _fetch_json(self, endpoint: str) -> dict[str, Any]:
+    async def _fetch_json(
+        self,
+        endpoint: str,
+        *,
+        method: str = "GET",
+        headers: dict[str, str] | None = None,
+        params: dict[str, str] | None = None,
+        json_payload: dict[str, Any] | None = None,
+    ) -> Any:
         url = f"{self._host}{endpoint}"
-        async with self._session.get(url, timeout=10) as resp:
+        async with self._session.request(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            json=json_payload,
+            timeout=10,
+        ) as resp:
+            text = await resp.text()
+            if resp.status in (401, 403):
+                raise PiholeAuthError(
+                    f"Pi-hole API rejected authentication for {endpoint}"
+                )
+            if resp.status == 404:
+                raise PiholeNotFoundError(f"Pi-hole API endpoint not found: {endpoint}")
             if resp.status >= 400:
-                text = await resp.text()
-                raise UpdateFailed(f"{url} returned HTTP {resp.status}: {text[:120]}")
-            return await resp.json(content_type=None)
+                raise PiholeApiError(
+                    f"Pi-hole API endpoint {endpoint} returned HTTP {resp.status}: "
+                    f"{text[:120]}"
+                )
+            if text.strip() == "Not authorized!":
+                raise PiholeAuthError(
+                    "Pi-hole legacy API rejected the configured API token"
+                )
+            try:
+                data = json.loads(text) if text else {}
+            except json.JSONDecodeError as err:
+                raise PiholeApiError(
+                    f"Pi-hole API endpoint {endpoint} did not return JSON"
+                ) from err
+            if _is_unauthorized_response(data):
+                raise PiholeAuthError(
+                    f"Pi-hole API rejected authentication for {endpoint}"
+                )
+            return data
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        try:
-            leases_json, devices_json = await asyncio.gather(
-                self._fetch_json(LEASES_ENDPOINT),
-                self._fetch_json(DEVICES_ENDPOINT),
+    async def _ensure_v6_session(self, *, force: bool = False) -> None:
+        if not self._password:
+            return
+
+        now = datetime.now(timezone.utc).timestamp()
+        if (
+            not force
+            and self._sid
+            and (
+                self._sid_valid_until is None
+                or self._sid_valid_until > now + 30
             )
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(err) from err
+        ):
+            return
 
+        data = await self._fetch_json(
+            AUTH_ENDPOINT,
+            method="POST",
+            json_payload={"password": self._password},
+        )
+        if not isinstance(data, dict):
+            raise PiholeApiError("Unexpected Pi-hole v6 authentication response")
+        session = data.get("session")
+        if not isinstance(session, dict) or not session.get("valid"):
+            message = None
+            if isinstance(session, dict):
+                message = _clean_name(session.get("message"))
+            detail = f": {message}" if message else ""
+            raise PiholeAuthError(f"Pi-hole v6 authentication failed{detail}")
+
+        sid = session.get("sid")
+        self._sid = sid if isinstance(sid, str) and sid else None
+        validity = session.get("validity")
+        if isinstance(validity, (int, float)) and validity > 0:
+            self._sid_valid_until = now + float(validity)
+        else:
+            self._sid_valid_until = None
+
+    async def _fetch_v6_json(
+        self, endpoint: str, *, retry_auth: bool = True
+    ) -> dict[str, Any]:
+        await self._ensure_v6_session()
+        headers = {"X-FTL-SID": self._sid} if self._sid else None
+
+        try:
+            return await self._fetch_json(endpoint, headers=headers)
+        except PiholeAuthError:
+            if self._password and retry_auth:
+                self._sid = None
+                self._sid_valid_until = None
+                await self._ensure_v6_session(force=True)
+                return await self._fetch_v6_json(endpoint, retry_auth=False)
+            if not self._password:
+                raise PiholeAuthError(
+                    "Pi-hole v6 requires authentication; configure the Pi-hole "
+                    "password in this integration's options"
+                )
+            raise
+
+    async def _fetch_v6_data(self) -> tuple[list[Any], list[Any]]:
+        devices_json = await self._fetch_v6_json(DEVICES_ENDPOINT)
+        try:
+            leases_json = await self._fetch_v6_json(LEASES_ENDPOINT)
+        except PiholeNotFoundError:
+            leases_json = {"leases": []}
+
+        if not isinstance(leases_json, dict) or not isinstance(devices_json, dict):
+            raise PiholeApiError("Unexpected Pi-hole v6 API response")
         leases = leases_json.get("leases", [])
         devices = devices_json.get("devices", [])
         if not isinstance(leases, list) or not isinstance(devices, list):
-            raise UpdateFailed("Unexpected Pi-hole API response")
+            raise PiholeApiError("Unexpected Pi-hole v6 API response")
+        return leases, devices
 
+    async def _fetch_legacy_data(self) -> tuple[list[Any], list[Any]]:
+        params = {"network": ""}
+        if self._api_token:
+            params["auth"] = self._api_token
+
+        network_json = await self._fetch_json(LEGACY_NETWORK_ENDPOINT, params=params)
+        network = (
+            network_json.get("network") if isinstance(network_json, dict) else None
+        )
+        if not isinstance(network, list):
+            raise PiholeAuthError(
+                "Pi-hole legacy API did not return network data; configure the API "
+                "token if the Pi-hole web UI has a password"
+            )
+
+        return [], _legacy_network_to_devices(network)
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            if self._api_mode in (API_MODE_AUTO, API_MODE_V6):
+                try:
+                    leases, devices = await self._fetch_v6_data()
+                    return self._normalize_data(leases, devices)
+                except PiholeNotFoundError:
+                    if self._api_mode == API_MODE_V6:
+                        raise
+                    _LOGGER.debug("Pi-hole v6 API not found; trying legacy PHP API")
+
+            if self._api_mode in (API_MODE_AUTO, API_MODE_LEGACY):
+                leases, devices = await self._fetch_legacy_data()
+                return self._normalize_data(leases, devices)
+
+            raise PiholeApiError(f"Unsupported Pi-hole API mode: {self._api_mode}")
+        except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
+            raise UpdateFailed(err) from err
+
+    def _normalize_data(
+        self, leases: list[Any], devices: list[Any]
+    ) -> dict[str, dict[str, Any]]:
         now = datetime.now(timezone.utc).timestamp()
         stale_cutoff = now - self._stale_after.total_seconds()
         merged: dict[str, dict[str, Any]] = {}
@@ -176,3 +348,46 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 info[ATTR_PRIMARY_IP] = ips[0]
 
         return merged
+
+
+def _is_unauthorized_response(data: Any) -> bool:
+    if not isinstance(data, dict):
+        return False
+    error = data.get("error")
+    if not isinstance(error, dict):
+        return False
+    return (
+        error.get("key") == "unauthorized"
+        or error.get("message") == "Unauthorized"
+    )
+
+
+def _legacy_network_to_devices(network: list[Any]) -> list[dict[str, Any]]:
+    devices: list[dict[str, Any]] = []
+    for row in network:
+        if not isinstance(row, dict):
+            continue
+
+        last_query = _as_timestamp(row.get("lastQuery"))
+        ips = []
+        names = _as_list(row.get("name"))
+        for index, ip in enumerate(_as_list(row.get("ip"))):
+            ip_entry: dict[str, Any] = {"ip": ip}
+            if index < len(names):
+                ip_entry["name"] = names[index]
+            if last_query is not None:
+                ip_entry["lastSeen"] = last_query
+            ips.append(ip_entry)
+
+        devices.append(
+            {
+                "hwaddr": row.get("hwaddr"),
+                "interface": row.get("interface"),
+                "firstSeen": row.get("firstSeen"),
+                "lastQuery": row.get("lastQuery"),
+                "numQueries": row.get("numQueries"),
+                "macVendor": row.get("macVendor"),
+                "ips": ips,
+            }
+        )
+    return devices
