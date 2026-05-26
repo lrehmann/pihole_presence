@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -35,6 +36,8 @@ def _clean_mac(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     mac = value.lower().strip()
+    if mac == "00:00:00:00:00:00":
+        return None
     if _MAC_RE.match(mac):
         return mac
     return None
@@ -53,6 +56,18 @@ def _as_timestamp(value: Any) -> float | None:
     if not isinstance(value, (int, float)) or value <= 0:
         return None
     return float(value)
+
+
+def _clean_ip(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        ip = ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+    if ip.is_loopback or ip.is_multicast or ip.is_unspecified:
+        return None
+    return str(ip)
 
 
 class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -106,14 +121,16 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not mac:
                 continue
             entry = merged.setdefault(mac, {ATTR_IP_ADDRESSES: set()})
-            if lease.get("ip"):
-                entry[ATTR_IP_ADDRESSES].add(str(lease["ip"]))
+            if ip := _clean_ip(lease.get("ip")):
+                entry[ATTR_IP_ADDRESSES].add(ip)
             if name := _clean_name(lease.get("name")):
                 entry[ATTR_NAME] = name
             if expires := _as_timestamp(lease.get("expires")):
                 entry[ATTR_DHCP_EXPIRES] = expires
 
         for dev in devices:
+            if dev.get("interface") == "lo":
+                continue
             mac = _clean_mac(dev.get("hwaddr"))
             if not mac:
                 continue
@@ -133,7 +150,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
 
             for ip_entry in dev.get("ips", []):
-                if ip := ip_entry.get("ip"):
+                if ip := _clean_ip(ip_entry.get("ip")):
                     entry[ATTR_IP_ADDRESSES].add(str(ip))
                     entry.setdefault(ATTR_PRIMARY_IP, str(ip))
                 if last_seen := _as_timestamp(ip_entry.get("lastSeen")):
