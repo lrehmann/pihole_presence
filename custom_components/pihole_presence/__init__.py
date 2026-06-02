@@ -23,7 +23,7 @@ from .const import (
 from .coordinator import PiholeUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[str] = ["device_tracker"]
+PLATFORMS: list[str] = ["device_tracker", "sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -51,6 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "coordinator": coordinator,
         "away_time": away_time,
+        "host": host,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

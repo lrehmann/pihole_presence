@@ -3,9 +3,9 @@
 **Domain:** `pihole_presence`
 **IoT Class:** `local_polling`
 
-A Home Assistant custom integration that uses Pi-hole's network status endpoint to monitor device presence. It unifies Pi-hole data with existing HA devices by matching on MAC address.
+A Home Assistant custom integration that uses Pi-hole network activity to track device presence. It matches Pi-hole rows to Home Assistant devices by MAC address and creates one `device_tracker` per active MAC.
 
-For existing installs with a large old registry, remove the old diagnostic sensor entities after upgrading. Current releases only create one `device_tracker` per active MAC address.
+For existing installs with a large old registry, remove the old diagnostic sensor entities after upgrading. Current releases keep per-device diagnostics on the tracker entity instead of creating separate per-device sensors.
 
 ## Features
 
@@ -13,38 +13,39 @@ For existing installs with a large old registry, remove the old diagnostic senso
   Merges Pi-hole network statistics and DHCP data with existing HA devices based on MAC address connections.
 
 * **Presence Tracking**
-  Implements a `device_tracker` named `Pi-hole Presence` with a `_pihole` suffix. Devices are `home` when their last Pi-hole DNS query is within the configured away threshold, otherwise `not_home`.
+  Devices are `home` when their last Pi-hole DNS query is within the configured away threshold, otherwise `not_home`.
 
-* **Tracker Attributes**
-  Adds useful details to each tracker as attributes: last query time, seconds since last query, first seen, last seen, query count, IP addresses, DHCP expiry, MAC vendor, and Pi-hole device name.
+* **Compact Diagnostics**
+  Tracker attributes include last query time, seconds since query, first seen, last seen, query count, IP addresses, DHCP expiry, MAC vendor, and Pi-hole name.
 
 * **Stale Device Filter**
   Ignores Pi-hole network rows whose last DNS query is older than the configured stale-device threshold. The default is 30 days.
 
-* **Efficient Polling**
-  Uses the Pi-hole v6 API when available and falls back to the pre-v6 PHP network endpoint for older installs.
-
 * **Authenticated Pi-hole Support**
   Supports Pi-hole v6 session authentication and the legacy pre-v6 API token.
+
+* **Legacy API Fallback**
+  Uses the Pi-hole v6 API when available and falls back to the pre-v6 PHP network endpoint for older installs.
+
+* **Pi-hole Host Sensors**
+  Adds host temperature, CPU usage, and memory usage from the Pi-hole v6 info API. Temperature is enabled by default. CPU and memory are disabled by default and can be enabled from Home Assistant's entity registry.
 
 ## Installation
 
 ### HACS
 
-1. Ensure HACS is installed.
-2. In Home Assistant, navigate to HACS -> Custom repositories.
-3. Add repository `https://github.com/lrehmann/pihole_presence` as an integration.
-4. Restart Home Assistant.
+1. Add this repository as a custom integration repository.
+2. Install **Pi-hole Presence**.
+3. Restart Home Assistant.
+4. Add **Pi-hole Presence** from Settings > Devices & services.
 
 ### Manual
 
-1. Clone or download this repo.
-2. Copy `custom_components/pihole_presence/` into `<config>/custom_components/`.
-3. Restart Home Assistant.
+1. Copy `custom_components/pihole_presence` into your Home Assistant `custom_components` directory.
+2. Restart Home Assistant.
+3. Add **Pi-hole Presence** from Settings > Devices & services.
 
 ## Configuration
-
-After restart, go to **Settings -> Devices & Services -> Add Integration** and search **Pi-hole Presence**.
 
 | Option | Description | Default |
 | --- | --- | --- |
@@ -58,20 +59,22 @@ After restart, go to **Settings -> Devices & Services -> Add Integration** and s
 
 ## Entities
 
-| Entity ID Pattern | Friendly Name | Description |
-| --- | --- | --- |
-| `device_tracker.<mac>_pihole` | Pi-hole Presence | Home if last query <= away timeout; otherwise away. |
-
-Each tracker includes attributes for diagnostics instead of creating separate per-device sensor entities.
+| Entity pattern | Name | Default | Description |
+| --- | --- | --- | --- |
+| `device_tracker.<mac>_pihole` | Pi-hole Presence | enabled | Home if last query is within the away timeout; otherwise away |
+| `sensor.pi_hole_temperature` | Pi-hole Temperature | enabled | CPU temperature from `/api/info/sensors` |
+| `sensor.pi_hole_cpu_usage` | Pi-hole CPU Usage | disabled | CPU percentage from `/api/info/system` |
+| `sensor.pi_hole_memory_usage` | Pi-hole Memory Usage | disabled | RAM percentage from `/api/info/system` |
 
 ## Troubleshooting
 
 * **No entities created:** Check the Pi-hole API base URL and network connectivity.
 * **Unauthorized on Pi-hole v6:** Add the Pi-hole web password in integration options.
 * **Older Pi-hole with web password enabled:** Add the pre-v6 API token in integration options, or force API Mode to `Pi-hole pre-v6 PHP API`.
+* **Host sensors unavailable:** CPU, memory, and temperature sensors require the Pi-hole v6 info API. Legacy pre-v6 installs continue to provide presence tracking only.
 * **Duplicate devices:** Ensure other integrations do not use conflicting MAC connections, then clear stale device registry entries if needed.
 * **Presence always away:** Verify the away threshold and that the device is actually making DNS queries through Pi-hole.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT

@@ -33,6 +33,8 @@ from .const import (
     DEVICES_ENDPOINT,
     LEGACY_NETWORK_ENDPOINT,
     LEASES_ENDPOINT,
+    SENSORS_ENDPOINT,
+    SYSTEM_ENDPOINT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,6 +119,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._api_mode = api_mode if api_mode in API_MODE_OPTIONS else API_MODE_AUTO
         self._sid: str | None = None
         self._sid_valid_until: float | None = None
+        self.host_metrics: dict[str, Any] = {}
         self._session = async_get_clientsession(hass)
         super().__init__(
             hass,
@@ -245,6 +248,28 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise PiholeApiError("Unexpected Pi-hole v6 API response")
         return leases, devices
 
+    async def _fetch_v6_host_metrics(self) -> dict[str, Any]:
+        metrics: dict[str, Any] = {}
+        endpoints = (
+            (SYSTEM_ENDPOINT, "system"),
+            (SENSORS_ENDPOINT, "sensors"),
+        )
+
+        for endpoint, key in endpoints:
+            try:
+                response = await self._fetch_v6_json(endpoint)
+            except PiholeNotFoundError:
+                continue
+            except PiholeApiError as err:
+                _LOGGER.debug("Unable to fetch Pi-hole host metric %s: %s", key, err)
+                continue
+
+            value = response.get(key) if isinstance(response, dict) else None
+            if isinstance(value, dict):
+                metrics[key] = value
+
+        return metrics
+
     async def _fetch_legacy_data(self) -> tuple[list[Any], list[Any]]:
         params = {"network": ""}
         if self._api_token:
@@ -267,6 +292,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._api_mode in (API_MODE_AUTO, API_MODE_V6):
                 try:
                     leases, devices = await self._fetch_v6_data()
+                    self.host_metrics = await self._fetch_v6_host_metrics()
                     return self._normalize_data(leases, devices)
                 except PiholeNotFoundError:
                     if self._api_mode == API_MODE_V6:
@@ -275,6 +301,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if self._api_mode in (API_MODE_AUTO, API_MODE_LEGACY):
                 leases, devices = await self._fetch_legacy_data()
+                self.host_metrics = {}
                 return self._normalize_data(leases, devices)
 
             raise PiholeApiError(f"Unsupported Pi-hole API mode: {self._api_mode}")
