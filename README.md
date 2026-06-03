@@ -2,8 +2,9 @@
 
 **Domain:** `pihole_presence`
 **IoT Class:** `local_polling`
+**Keywords:** Home Assistant, HACS, Pi-hole, Pi-hole v6, presence detection, device tracker, DNS activity, host diagnostics
 
-A Home Assistant custom integration that uses Pi-hole network activity to track device presence. It matches Pi-hole rows to Home Assistant devices by MAC address and creates one `device_tracker` per active MAC.
+Pi-hole Presence is a Home Assistant custom integration for HACS that uses Pi-hole DNS activity to track device presence. It matches Pi-hole network rows to Home Assistant devices by MAC address, creates one `device_tracker` per active MAC, and adds Pi-hole host diagnostics for temperature, CPU, and memory on Pi-hole v6.
 
 For existing installs with a large old registry, remove the old diagnostic sensor entities after upgrading. Current releases keep per-device diagnostics on the tracker entity instead of creating separate per-device sensors.
 
@@ -29,6 +30,10 @@ For existing installs with a large old registry, remove the old diagnostic senso
 
 * **Pi-hole Host Sensors**
   Adds host temperature, CPU usage, and memory usage from the Pi-hole v6 info API. Temperature is enabled by default. CPU and memory are disabled by default and can be enabled from Home Assistant's entity registry.
+
+## Logo
+
+The logo combines Home Assistant-style presence, Pi-hole monitoring, and local-network diagnostics. HACS uses `piholepresence.png`; Home Assistant uses the matching component `logo.png`, `icon.png`, and `dark_icon.png` assets.
 
 ## Installation
 
