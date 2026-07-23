@@ -1,7 +1,7 @@
 {
   "domain": "pihole_presence",
   "name": "Pi‑hole Presence",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "iot_class": "local_polling",
   "documentation": "https://github.com/lrehmann/pihole_presence",
   "issue_tracker": "https://github.com/lrehmann/pihole_presence/issues",

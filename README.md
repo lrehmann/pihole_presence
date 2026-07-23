@@ -14,7 +14,7 @@ For existing installs with a large old registry, remove the old diagnostic senso
   Merges Pi-hole network statistics and DHCP data with existing HA devices based on MAC address connections.
 
 * **Presence Tracking**
-  Devices are `home` when their last Pi-hole DNS query is within the configured away threshold, otherwise `not_home`.
+  Devices are `home` when their latest real-time Pi-hole DNS query is within the configured away threshold, otherwise `not_home`. Pi-hole v6 query activity is joined to the slower network table by IP and MAC so short away thresholds remain accurate.
 
 * **Compact Diagnostics**
   Tracker attributes include last query time, seconds since query, first seen, last seen, query count, IP addresses, DHCP expiry, MAC vendor, and Pi-hole name.
@@ -30,6 +30,9 @@ For existing installs with a large old registry, remove the old diagnostic senso
 
 * **Pi-hole Host Sensors**
   Adds host temperature, CPU usage, and memory usage from the Pi-hole v6 info API. Temperature is enabled by default. CPU and memory are disabled by default and can be enabled from Home Assistant's entity registry.
+
+* **API Load Protection**
+  Polls only the required presence data on each interval, incrementally fetches real-time query activity, refreshes supplemental DHCP and host metrics every five minutes, and backs off repeated connection failures for up to five minutes. This keeps Pi-hole API trouble from creating an aggressive retry loop.
 
 ## Logo
 
@@ -74,6 +77,7 @@ The logo combines Home Assistant-style presence, Pi-hole monitoring, and local-n
 ## Troubleshooting
 
 * **No entities created:** Check the Pi-hole API base URL and network connectivity.
+* **Entities suddenly unavailable while DNS still works:** Check whether the Pi-hole web/API server responds. The integration backs off repeated failures automatically, but Pi-hole FTL may need to be restarted if its embedded web server has stopped accepting connections.
 * **Unauthorized on Pi-hole v6:** Add the Pi-hole web password in integration options.
 * **Older Pi-hole with web password enabled:** Add the pre-v6 API token in integration options, or force API Mode to `Pi-hole pre-v6 PHP API`.
 * **Host sensors unavailable:** CPU, memory, and temperature sensors require the Pi-hole v6 info API. Legacy pre-v6 installs continue to provide presence tracking only.

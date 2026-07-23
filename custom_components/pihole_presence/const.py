@@ -37,6 +37,7 @@ ATTR_LAST_SEEN = "last_seen"
 
 LEASES_ENDPOINT = "/api/dhcp/leases"
 DEVICES_ENDPOINT = "/api/network/devices?max_devices=999&max_addresses=24"
+QUERIES_ENDPOINT = "/api/queries"
 AUTH_ENDPOINT = "/api/auth"
 SYSTEM_ENDPOINT = "/api/info/system"
 SENSORS_ENDPOINT = "/api/info/sensors"

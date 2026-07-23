@@ -42,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         host,
         scan_interval,
         stale_device_days,
+        presence_window=away_time,
         password=password,
         api_token=api_token,
         api_mode=api_mode,

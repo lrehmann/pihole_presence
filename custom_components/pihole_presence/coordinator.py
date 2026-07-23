@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import Any
 
 import aiohttp
@@ -33,12 +34,17 @@ from .const import (
     DEVICES_ENDPOINT,
     LEGACY_NETWORK_ENDPOINT,
     LEASES_ENDPOINT,
+    QUERIES_ENDPOINT,
     SENSORS_ENDPOINT,
     SYSTEM_ENDPOINT,
 )
 
 _LOGGER = logging.getLogger(__name__)
 _MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
+_SUPPLEMENTAL_REFRESH_SECONDS = 300
+_MAX_RETRY_BACKOFF_SECONDS = 300
+_QUERY_FETCH_OVERLAP_SECONDS = 5
+_QUERY_FETCH_LIMIT = 10000
 
 
 def _clean_mac(value: Any) -> str | None:
@@ -108,17 +114,25 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         host: str,
         scan_interval: int,
         stale_device_days: int,
+        presence_window: int = 900,
         password: str | None = None,
         api_token: str | None = None,
         api_mode: str = API_MODE_AUTO,
     ):
         self._host = host.rstrip("/")
         self._stale_after = timedelta(days=stale_device_days)
+        self._presence_window = max(30, presence_window)
         self._password = (password or "").strip()
         self._api_token = (api_token or "").strip()
         self._api_mode = api_mode if api_mode in API_MODE_OPTIONS else API_MODE_AUTO
         self._sid: str | None = None
         self._sid_valid_until: float | None = None
+        self._cached_leases: list[Any] = []
+        self._recent_query_by_ip: dict[str, float] = {}
+        self._last_query_fetch_at: float | None = None
+        self._supplemental_refresh_due = 0.0
+        self._consecutive_failures = 0
+        self._retry_not_before = 0.0
         self.host_metrics: dict[str, Any] = {}
         self._session = async_get_clientsession(hass)
         super().__init__(
@@ -213,19 +227,31 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._sid_valid_until = None
 
     async def _fetch_v6_json(
-        self, endpoint: str, *, retry_auth: bool = True
+        self,
+        endpoint: str,
+        *,
+        params: dict[str, str] | None = None,
+        retry_auth: bool = True,
     ) -> dict[str, Any]:
         await self._ensure_v6_session()
         headers = {"X-FTL-SID": self._sid} if self._sid else None
 
         try:
-            return await self._fetch_json(endpoint, headers=headers)
+            return await self._fetch_json(
+                endpoint,
+                headers=headers,
+                params=params,
+            )
         except PiholeAuthError:
             if self._password and retry_auth:
                 self._sid = None
                 self._sid_valid_until = None
                 await self._ensure_v6_session(force=True)
-                return await self._fetch_v6_json(endpoint, retry_auth=False)
+                return await self._fetch_v6_json(
+                    endpoint,
+                    params=params,
+                    retry_auth=False,
+                )
             if not self._password:
                 raise PiholeAuthError(
                     "Pi-hole v6 requires authentication; configure the Pi-hole "
@@ -235,18 +261,108 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _fetch_v6_data(self) -> tuple[list[Any], list[Any]]:
         devices_json = await self._fetch_v6_json(DEVICES_ENDPOINT)
-        try:
-            leases_json = await self._fetch_v6_json(LEASES_ENDPOINT)
-        except PiholeNotFoundError:
-            leases_json = {"leases": []}
-
-        if not isinstance(leases_json, dict) or not isinstance(devices_json, dict):
+        if not isinstance(devices_json, dict):
             raise PiholeApiError("Unexpected Pi-hole v6 API response")
-        leases = leases_json.get("leases", [])
         devices = devices_json.get("devices", [])
-        if not isinstance(leases, list) or not isinstance(devices, list):
+        if not isinstance(devices, list):
             raise PiholeApiError("Unexpected Pi-hole v6 API response")
-        return leases, devices
+
+        try:
+            await self._refresh_recent_query_times()
+        except PiholeNotFoundError:
+            _LOGGER.debug(
+                "Pi-hole query API not found; using network-table timestamps"
+            )
+        except PiholeApiError as err:
+            _LOGGER.debug(
+                "Unable to refresh recent Pi-hole queries; using cached data: %s",
+                err,
+            )
+
+        now = monotonic()
+        if now >= self._supplemental_refresh_due:
+            # Presence only depends on the network devices response. DHCP leases
+            # and host metrics are supplemental, so fetch them less frequently
+            # and never let a supplemental endpoint take every tracker offline.
+            self._supplemental_refresh_due = (
+                now + _SUPPLEMENTAL_REFRESH_SECONDS
+            )
+            try:
+                leases_json = await self._fetch_v6_json(LEASES_ENDPOINT)
+                if not isinstance(leases_json, dict):
+                    raise PiholeApiError(
+                        "Unexpected Pi-hole v6 DHCP leases response"
+                    )
+                leases = leases_json.get("leases", [])
+                if not isinstance(leases, list):
+                    raise PiholeApiError(
+                        "Unexpected Pi-hole v6 DHCP leases response"
+                    )
+                self._cached_leases = leases
+            except PiholeNotFoundError:
+                self._cached_leases = []
+            except PiholeApiError as err:
+                _LOGGER.debug(
+                    "Unable to refresh Pi-hole DHCP leases; using cached data: %s",
+                    err,
+                )
+
+            metrics = await self._fetch_v6_host_metrics()
+            if metrics:
+                self.host_metrics = metrics
+
+        return self._cached_leases, devices
+
+    async def _refresh_recent_query_times(self) -> None:
+        fetch_until = datetime.now(timezone.utc).timestamp()
+        if self._last_query_fetch_at is None:
+            fetch_from = fetch_until - self._presence_window
+        else:
+            fetch_from = max(
+                fetch_until - self._presence_window,
+                self._last_query_fetch_at - _QUERY_FETCH_OVERLAP_SECONDS,
+            )
+
+        response = await self._fetch_v6_json(
+            QUERIES_ENDPOINT,
+            params={
+                "from": str(fetch_from),
+                "until": str(fetch_until),
+                "length": str(_QUERY_FETCH_LIMIT),
+            },
+        )
+        queries = response.get("queries") if isinstance(response, dict) else None
+        if not isinstance(queries, list):
+            raise PiholeApiError("Unexpected Pi-hole v6 queries response")
+
+        for query in queries:
+            if not isinstance(query, dict):
+                continue
+            client = query.get("client")
+            if not isinstance(client, dict):
+                continue
+            ip = _clean_ip(client.get("ip"))
+            query_time = _as_timestamp(query.get("time"))
+            if ip and query_time:
+                self._recent_query_by_ip[ip] = max(
+                    query_time,
+                    self._recent_query_by_ip.get(ip, 0),
+                )
+
+        cutoff = fetch_until - self._presence_window
+        self._recent_query_by_ip = {
+            ip: query_time
+            for ip, query_time in self._recent_query_by_ip.items()
+            if query_time >= cutoff
+        }
+        self._last_query_fetch_at = fetch_until
+
+        if len(queries) == _QUERY_FETCH_LIMIT:
+            _LOGGER.warning(
+                "Pi-hole returned the maximum of %s recent queries; "
+                "low-frequency clients may be omitted from this update",
+                _QUERY_FETCH_LIMIT,
+            )
 
     async def _fetch_v6_host_metrics(self) -> dict[str, Any]:
         metrics: dict[str, Any] = {}
@@ -288,12 +404,20 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return [], _legacy_network_to_devices(network)
 
     async def _async_update_data(self) -> dict[str, Any]:
+        now = monotonic()
+        if now < self._retry_not_before:
+            retry_in = max(1, round(self._retry_not_before - now))
+            raise UpdateFailed(
+                f"Pi-hole API retry is backed off for {retry_in} more seconds"
+            )
+
         try:
             if self._api_mode in (API_MODE_AUTO, API_MODE_V6):
                 try:
                     leases, devices = await self._fetch_v6_data()
-                    self.host_metrics = await self._fetch_v6_host_metrics()
-                    return self._normalize_data(leases, devices)
+                    data = self._normalize_data(leases, devices)
+                    self._record_update_success()
+                    return data
                 except PiholeNotFoundError:
                     if self._api_mode == API_MODE_V6:
                         raise
@@ -302,11 +426,26 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._api_mode in (API_MODE_AUTO, API_MODE_LEGACY):
                 leases, devices = await self._fetch_legacy_data()
                 self.host_metrics = {}
-                return self._normalize_data(leases, devices)
+                data = self._normalize_data(leases, devices)
+                self._record_update_success()
+                return data
 
             raise PiholeApiError(f"Unsupported Pi-hole API mode: {self._api_mode}")
         except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
-            raise UpdateFailed(err) from err
+            self._consecutive_failures += 1
+            base_interval = max(1, self.update_interval.total_seconds())
+            backoff = min(
+                base_interval * (2 ** (self._consecutive_failures - 1)),
+                _MAX_RETRY_BACKOFF_SECONDS,
+            )
+            self._retry_not_before = monotonic() + backoff
+            raise UpdateFailed(
+                f"{err}; retrying in {round(backoff)} seconds"
+            ) from err
+
+    def _record_update_success(self) -> None:
+        self._consecutive_failures = 0
+        self._retry_not_before = 0.0
 
     def _normalize_data(
         self, leases: list[Any], devices: list[Any]
@@ -334,6 +473,15 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not mac:
                 continue
             last_query = _as_timestamp(dev.get("lastQuery"))
+            for ip_entry in dev.get("ips", []):
+                if not isinstance(ip_entry, dict):
+                    continue
+                ip = _clean_ip(ip_entry.get("ip"))
+                if ip and ip in self._recent_query_by_ip:
+                    last_query = max(
+                        last_query or 0,
+                        self._recent_query_by_ip[ip],
+                    )
             if last_query is None or last_query < stale_cutoff:
                 continue
 
