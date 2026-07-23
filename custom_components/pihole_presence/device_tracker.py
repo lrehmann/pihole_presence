@@ -65,7 +65,7 @@ class PiholeTracker(CoordinatorEntity, TrackerEntity):
         super().__init__(coordinator)
         self._mac = mac
         self._away = away_time
-        self._attr_unique_id = f"{DOMAIN}_{mac.replace(':','')}_pihole"
+        self._attr_unique_id = f"{DOMAIN}_{mac.replace(':', '')}_pihole"
         self._attr_name = "Pi-hole Presence"
 
     @property

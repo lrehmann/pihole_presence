@@ -1,5 +1,7 @@
 # Pi-hole Presence
 
+[![Validate](https://github.com/lrehmann/pihole_presence/actions/workflows/validate.yml/badge.svg)](https://github.com/lrehmann/pihole_presence/actions/workflows/validate.yml)
+
 **Domain:** `pihole_presence`
 **IoT Class:** `local_polling`
 **Keywords:** Home Assistant, HACS, Pi-hole, Pi-hole v6, presence detection, device tracker, DNS activity, host diagnostics
@@ -36,16 +38,18 @@ For existing installs with a large old registry, remove the old diagnostic senso
 
 ## Logo
 
-The logo combines Home Assistant-style presence, Pi-hole monitoring, and local-network diagnostics. HACS uses `piholepresence.png`; Home Assistant uses the matching component `logo.png`, `icon.png`, and `dark_icon.png` assets.
+The logo combines Home Assistant-style presence, Pi-hole monitoring, and local-network diagnostics. Home Assistant and HACS use the assets in `custom_components/pihole_presence/brand`.
 
 ## Installation
 
 ### HACS
 
-1. Add this repository as a custom integration repository.
+1. Open this repository in HACS using the button below, or add it as a custom integration repository.
 2. Install **Pi-hole Presence**.
 3. Restart Home Assistant.
 4. Add **Pi-hole Presence** from Settings > Devices & services.
+
+[![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=lrehmann&repository=pihole_presence&category=integration)
 
 ### Manual
 

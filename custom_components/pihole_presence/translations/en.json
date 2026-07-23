@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Pi-hole",
+        "description": "Configure the Pi-hole API used for presence tracking.",
+        "data": {
+          "host": "Host URL",
+          "api_mode": "API mode",
+          "password": "Pi-hole v6 web password",
+          "api_token": "Pre-v6 API token",
+          "scan_interval": "Poll frequency",
+          "away_time": "Consider away after",
+          "stale_device_days": "Stale device age"
+        },
+        "data_description": {
+          "host": "Base URL such as http://pi.hole or http://192.168.1.2.",
+          "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
+          "password": "Optional password used to create a Pi-hole v6 API session.",
+          "api_token": "Optional token for the pre-v6 PHP API.",
+          "scan_interval": "Seconds between Pi-hole API polls.",
+          "away_time": "Seconds without a DNS query before a device is marked not home.",
+          "stale_device_days": "Devices without a DNS query for this many days are ignored."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Pi-hole Presence",
+        "data": {
+          "host": "Host URL",
+          "api_mode": "API mode",
+          "password": "Pi-hole v6 web password",
+          "api_token": "Pre-v6 API token",
+          "scan_interval": "Poll frequency",
+          "away_time": "Consider away after",
+          "stale_device_days": "Stale device age"
+        },
+        "data_description": {
+          "host": "Base URL such as http://pi.hole or http://192.168.1.2.",
+          "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
+          "password": "Optional password used to create a Pi-hole v6 API session.",
+          "api_token": "Optional token for the pre-v6 PHP API.",
+          "scan_interval": "Seconds between Pi-hole API polls.",
+          "away_time": "Seconds without a DNS query before a device is marked not home.",
+          "stale_device_days": "Devices without a DNS query for this many days are ignored."
+        }
+      }
+    }
+  }
+}

@@ -45,6 +45,7 @@ _SUPPLEMENTAL_REFRESH_SECONDS = 300
 _MAX_RETRY_BACKOFF_SECONDS = 300
 _QUERY_FETCH_OVERLAP_SECONDS = 5
 _QUERY_FETCH_LIMIT = 10000
+_QUERY_FETCH_MAX_PAGES = 10
 
 
 def _clean_mac(value: Any) -> str | None:
@@ -196,10 +197,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if (
             not force
             and self._sid
-            and (
-                self._sid_valid_until is None
-                or self._sid_valid_until > now + 30
-            )
+            and (self._sid_valid_until is None or self._sid_valid_until > now + 30)
         ):
             return
 
@@ -270,10 +268,8 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             await self._refresh_recent_query_times()
         except PiholeNotFoundError:
-            _LOGGER.debug(
-                "Pi-hole query API not found; using network-table timestamps"
-            )
-        except PiholeApiError as err:
+            _LOGGER.debug("Pi-hole query API not found; using network-table timestamps")
+        except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
             _LOGGER.debug(
                 "Unable to refresh recent Pi-hole queries; using cached data: %s",
                 err,
@@ -284,24 +280,18 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Presence only depends on the network devices response. DHCP leases
             # and host metrics are supplemental, so fetch them less frequently
             # and never let a supplemental endpoint take every tracker offline.
-            self._supplemental_refresh_due = (
-                now + _SUPPLEMENTAL_REFRESH_SECONDS
-            )
+            self._supplemental_refresh_due = now + _SUPPLEMENTAL_REFRESH_SECONDS
             try:
                 leases_json = await self._fetch_v6_json(LEASES_ENDPOINT)
                 if not isinstance(leases_json, dict):
-                    raise PiholeApiError(
-                        "Unexpected Pi-hole v6 DHCP leases response"
-                    )
+                    raise PiholeApiError("Unexpected Pi-hole v6 DHCP leases response")
                 leases = leases_json.get("leases", [])
                 if not isinstance(leases, list):
-                    raise PiholeApiError(
-                        "Unexpected Pi-hole v6 DHCP leases response"
-                    )
+                    raise PiholeApiError("Unexpected Pi-hole v6 DHCP leases response")
                 self._cached_leases = leases
             except PiholeNotFoundError:
                 self._cached_leases = []
-            except PiholeApiError as err:
+            except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
                 _LOGGER.debug(
                     "Unable to refresh Pi-hole DHCP leases; using cached data: %s",
                     err,
@@ -323,31 +313,53 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._last_query_fetch_at - _QUERY_FETCH_OVERLAP_SECONDS,
             )
 
-        response = await self._fetch_v6_json(
-            QUERIES_ENDPOINT,
-            params={
+        cursor: int | None = None
+        seen_cursors: set[int] = set()
+        reached_page_limit = False
+
+        for page in range(_QUERY_FETCH_MAX_PAGES):
+            params = {
                 "from": str(fetch_from),
                 "until": str(fetch_until),
                 "length": str(_QUERY_FETCH_LIMIT),
-            },
-        )
-        queries = response.get("queries") if isinstance(response, dict) else None
-        if not isinstance(queries, list):
-            raise PiholeApiError("Unexpected Pi-hole v6 queries response")
+            }
+            if cursor is not None:
+                params["cursor"] = str(cursor)
 
-        for query in queries:
-            if not isinstance(query, dict):
-                continue
-            client = query.get("client")
-            if not isinstance(client, dict):
-                continue
-            ip = _clean_ip(client.get("ip"))
-            query_time = _as_timestamp(query.get("time"))
-            if ip and query_time:
-                self._recent_query_by_ip[ip] = max(
-                    query_time,
-                    self._recent_query_by_ip.get(ip, 0),
-                )
+            response = await self._fetch_v6_json(
+                QUERIES_ENDPOINT,
+                params=params,
+            )
+            queries = response.get("queries") if isinstance(response, dict) else None
+            if not isinstance(queries, list):
+                raise PiholeApiError("Unexpected Pi-hole v6 queries response")
+
+            for query in queries:
+                if not isinstance(query, dict):
+                    continue
+                client = query.get("client")
+                if not isinstance(client, dict):
+                    continue
+                ip = _clean_ip(client.get("ip"))
+                query_time = _as_timestamp(query.get("time"))
+                if ip and query_time:
+                    self._recent_query_by_ip[ip] = max(
+                        query_time,
+                        self._recent_query_by_ip.get(ip, 0),
+                    )
+
+            next_cursor = response.get("cursor")
+            if (
+                len(queries) < _QUERY_FETCH_LIMIT
+                or not isinstance(next_cursor, int)
+                or next_cursor in seen_cursors
+            ):
+                break
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+            if page == _QUERY_FETCH_MAX_PAGES - 1:
+                reached_page_limit = True
 
         cutoff = fetch_until - self._presence_window
         self._recent_query_by_ip = {
@@ -357,11 +369,11 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self._last_query_fetch_at = fetch_until
 
-        if len(queries) == _QUERY_FETCH_LIMIT:
+        if reached_page_limit:
             _LOGGER.warning(
-                "Pi-hole returned the maximum of %s recent queries; "
-                "low-frequency clients may be omitted from this update",
-                _QUERY_FETCH_LIMIT,
+                "Pi-hole returned more than %s recent queries; "
+                "older activity may be omitted from this update",
+                _QUERY_FETCH_LIMIT * _QUERY_FETCH_MAX_PAGES,
             )
 
     async def _fetch_v6_host_metrics(self) -> dict[str, Any]:
@@ -376,7 +388,7 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 response = await self._fetch_v6_json(endpoint)
             except PiholeNotFoundError:
                 continue
-            except PiholeApiError as err:
+            except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
                 _LOGGER.debug("Unable to fetch Pi-hole host metric %s: %s", key, err)
                 continue
 
@@ -434,14 +446,13 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (aiohttp.ClientError, asyncio.TimeoutError, PiholeApiError) as err:
             self._consecutive_failures += 1
             base_interval = max(1, self.update_interval.total_seconds())
+            exponent = min(self._consecutive_failures - 1, 10)
             backoff = min(
-                base_interval * (2 ** (self._consecutive_failures - 1)),
+                base_interval * (2**exponent),
                 _MAX_RETRY_BACKOFF_SECONDS,
             )
             self._retry_not_before = monotonic() + backoff
-            raise UpdateFailed(
-                f"{err}; retrying in {round(backoff)} seconds"
-            ) from err
+            raise UpdateFailed(f"{err}; retrying in {round(backoff)} seconds") from err
 
     def _record_update_success(self) -> None:
         self._consecutive_failures = 0
@@ -455,6 +466,8 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         merged: dict[str, dict[str, Any]] = {}
 
         for lease in leases:
+            if not isinstance(lease, dict):
+                continue
             mac = _clean_mac(lease.get("hwaddr"))
             if not mac:
                 continue
@@ -467,13 +480,15 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 entry[ATTR_DHCP_EXPIRES] = expires
 
         for dev in devices:
+            if not isinstance(dev, dict):
+                continue
             if dev.get("interface") == "lo":
                 continue
             mac = _clean_mac(dev.get("hwaddr"))
             if not mac:
                 continue
             last_query = _as_timestamp(dev.get("lastQuery"))
-            for ip_entry in dev.get("ips", []):
+            for ip_entry in _as_list(dev.get("ips")):
                 if not isinstance(ip_entry, dict):
                     continue
                 ip = _clean_ip(ip_entry.get("ip"))
@@ -496,14 +511,14 @@ class PiholeUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
 
-            for ip_entry in dev.get("ips", []):
+            for ip_entry in _as_list(dev.get("ips")):
+                if not isinstance(ip_entry, dict):
+                    continue
                 if ip := _clean_ip(ip_entry.get("ip")):
                     entry[ATTR_IP_ADDRESSES].add(str(ip))
                     entry.setdefault(ATTR_PRIMARY_IP, str(ip))
                 if last_seen := _as_timestamp(ip_entry.get("lastSeen")):
-                    entry[ATTR_LAST_SEEN] = max(
-                        last_seen, entry.get(ATTR_LAST_SEEN, 0)
-                    )
+                    entry[ATTR_LAST_SEEN] = max(last_seen, entry.get(ATTR_LAST_SEEN, 0))
                 if not entry.get(ATTR_NAME) and (
                     name := _clean_name(ip_entry.get("name"))
                 ):
@@ -531,10 +546,7 @@ def _is_unauthorized_response(data: Any) -> bool:
     error = data.get("error")
     if not isinstance(error, dict):
         return False
-    return (
-        error.get("key") == "unauthorized"
-        or error.get("message") == "Unauthorized"
-    )
+    return error.get("key") == "unauthorized" or error.get("message") == "Unauthorized"
 
 
 def _legacy_network_to_devices(network: list[Any]) -> list[dict[str, Any]]:

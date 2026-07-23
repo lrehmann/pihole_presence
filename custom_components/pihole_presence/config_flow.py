@@ -25,18 +25,12 @@ def _data_schema(defaults: dict | None = None) -> vol.Schema:
     defaults = defaults or {}
     return vol.Schema(
         {
-            vol.Required(
-                CONF_HOST, default=defaults.get(CONF_HOST, DEFAULT_HOST)
-            ): str,
+            vol.Required(CONF_HOST, default=defaults.get(CONF_HOST, DEFAULT_HOST)): str,
             vol.Required(
                 CONF_API_MODE, default=defaults.get(CONF_API_MODE, DEFAULT_API_MODE)
             ): vol.In(API_MODE_OPTIONS),
-            vol.Optional(
-                CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")
-            ): str,
-            vol.Optional(
-                CONF_API_TOKEN, default=defaults.get(CONF_API_TOKEN, "")
-            ): str,
+            vol.Optional(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): str,
+            vol.Optional(CONF_API_TOKEN, default=defaults.get(CONF_API_TOKEN, "")): str,
             vol.Required(
                 CONF_SCAN_INTERVAL,
                 default=defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
