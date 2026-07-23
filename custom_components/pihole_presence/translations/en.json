@@ -14,7 +14,7 @@
           "stale_device_days": "Stale device age"
         },
         "data_description": {
-          "host": "Base URL such as http://pi.hole or http://192.168.1.2.",
+          "host": "Pi-hole base address, including its protocol.",
           "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
           "password": "Optional password used to create a Pi-hole v6 API session.",
           "api_token": "Optional token for the pre-v6 PHP API.",
@@ -39,7 +39,7 @@
           "stale_device_days": "Stale device age"
         },
         "data_description": {
-          "host": "Base URL such as http://pi.hole or http://192.168.1.2.",
+          "host": "Pi-hole base address, including its protocol.",
           "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
           "password": "Optional password used to create a Pi-hole v6 API session.",
           "api_token": "Optional token for the pre-v6 PHP API.",
