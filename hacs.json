@@ -1,12 +1,5 @@
 {
   "name": "Pi‑hole Presence",
-  "domains": ["pihole_presence"],
-  "country": "US",
   "homeassistant": "2023.0.0",
-  "iot_class": "local_polling",
-  "content_in_root": false,
-  "render_readme": true,
-  "logo": "piholepresence.png",
-  "logo_dark": "piholepresence.png",
-  "logo_light": "piholepresence.png"
+  "render_readme": true
 }

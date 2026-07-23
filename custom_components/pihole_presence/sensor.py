@@ -117,7 +117,9 @@ def _temperature_attributes(metrics: dict[str, Any]) -> dict[str, Any]:
     sensors = _get(metrics, "sensors")
     return _compact(
         {
-            "hot_limit": sensors.get("hot_limit") if isinstance(sensors, dict) else None,
+            "hot_limit": sensors.get("hot_limit")
+            if isinstance(sensors, dict)
+            else None,
             "unit": sensors.get("unit") if isinstance(sensors, dict) else None,
         }
     )
@@ -214,7 +216,9 @@ class PiholeHostSensor(CoordinatorEntity[PiholeUpdateCoordinator], SensorEntity)
     def extra_state_attributes(self) -> dict[str, Any]:
         if self.entity_description.extra_attributes_fn is None:
             return {}
-        return self.entity_description.extra_attributes_fn(self.coordinator.host_metrics)
+        return self.entity_description.extra_attributes_fn(
+            self.coordinator.host_metrics
+        )
 
     @property
     def device_info(self) -> DeviceInfo:

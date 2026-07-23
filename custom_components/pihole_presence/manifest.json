@@ -1,13 +1,13 @@
 {
   "domain": "pihole_presence",
   "name": "Pi‑hole Presence",
-  "version": "0.5.1",
-  "iot_class": "local_polling",
-  "documentation": "https://github.com/lrehmann/pihole_presence",
-  "issue_tracker": "https://github.com/lrehmann/pihole_presence/issues",
-  "requirements": [],
-  "dependencies": [],
   "codeowners": ["@lrehmann"],
   "config_flow": true,
-  "platforms": ["device_tracker", "sensor"]
+  "dependencies": [],
+  "documentation": "https://github.com/lrehmann/pihole_presence",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/lrehmann/pihole_presence/issues",
+  "requirements": [],
+  "version": "0.6.0"
 }
