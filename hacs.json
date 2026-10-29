@@ -1,5 +1,5 @@
 {
   "name": "Pi‑hole Presence",
-  "homeassistant": "2023.0.0",
+  "homeassistant": "2023.1.7",
   "render_readme": true
 }

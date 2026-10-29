@@ -7,22 +7,54 @@
         "data": {
           "host": "Host URL",
           "api_mode": "API mode",
-          "password": "Pi-hole v6 web password",
+          "password": "Pi-hole v6 web or application password",
           "api_token": "Pre-v6 API token",
           "scan_interval": "Poll frequency",
           "away_time": "Consider away after",
           "stale_device_days": "Stale device age"
         },
         "data_description": {
-          "host": "Pi-hole base address, including its protocol.",
+          "host": "Pi-hole hostname, IP, or HTTP/HTTPS address, including a port or reverse proxy prefix if needed.",
           "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
-          "password": "Optional password used to create a Pi-hole v6 API session.",
+          "password": "Optional v6 password. Use an application password when two-factor authentication is enabled.",
+          "api_token": "Optional token for the pre-v6 PHP API.",
+          "scan_interval": "Seconds between Pi-hole API polls.",
+          "away_time": "Seconds without a DNS query before a device is marked not home.",
+          "stale_device_days": "Devices without a DNS query for this many days are ignored."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to Pi-hole",
+        "description": "Update the credentials for this Pi-hole. Existing devices and entity IDs are preserved.",
+        "data": {
+          "host": "Host URL",
+          "api_mode": "API mode",
+          "password": "Pi-hole v6 web or application password",
+          "api_token": "Pre-v6 API token",
+          "scan_interval": "Poll frequency",
+          "away_time": "Consider away after",
+          "stale_device_days": "Stale device age"
+        },
+        "data_description": {
+          "host": "Pi-hole hostname, IP, or HTTP/HTTPS address, including a port or reverse proxy prefix if needed.",
+          "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
+          "password": "Optional v6 password. Use an application password when two-factor authentication is enabled.",
           "api_token": "Optional token for the pre-v6 PHP API.",
           "scan_interval": "Seconds between Pi-hole API polls.",
           "away_time": "Seconds without a DNS query before a device is marked not home.",
           "stale_device_days": "Devices without a DNS query for this many days are ignored."
         }
       }
+    },
+    "error": {
+      "invalid_host": "Enter a valid HTTP or HTTPS Pi-hole address without embedded credentials.",
+      "cannot_connect": "Cannot reach the Pi-hole web/API server. Check the host, port, certificate, and API availability; DNS can still work while the API is unavailable.",
+      "invalid_auth": "Authentication failed. Use a Pi-hole v6 web/application password or a pre-v6 API token, as appropriate.",
+      "invalid_response": "Pi-hole returned an unsupported, invalid, or busy API response. Check the API mode and Pi-hole web/API server."
+    },
+    "abort": {
+      "already_configured": "This Pi-hole is already configured.",
+      "reauth_successful": "Pi-hole authentication was updated."
     }
   },
   "options": {
@@ -32,22 +64,28 @@
         "data": {
           "host": "Host URL",
           "api_mode": "API mode",
-          "password": "Pi-hole v6 web password",
+          "password": "Pi-hole v6 web or application password",
           "api_token": "Pre-v6 API token",
           "scan_interval": "Poll frequency",
           "away_time": "Consider away after",
           "stale_device_days": "Stale device age"
         },
         "data_description": {
-          "host": "Pi-hole base address, including its protocol.",
+          "host": "Pi-hole hostname, IP, or HTTP/HTTPS address, including a port or reverse proxy prefix if needed.",
           "api_mode": "Auto detect tries the Pi-hole v6 API before the legacy API.",
-          "password": "Optional password used to create a Pi-hole v6 API session.",
+          "password": "Optional v6 password. Use an application password when two-factor authentication is enabled.",
           "api_token": "Optional token for the pre-v6 PHP API.",
           "scan_interval": "Seconds between Pi-hole API polls.",
           "away_time": "Seconds without a DNS query before a device is marked not home.",
           "stale_device_days": "Devices without a DNS query for this many days are ignored."
         }
       }
+    },
+    "error": {
+      "invalid_host": "Enter a valid HTTP or HTTPS Pi-hole address without embedded credentials.",
+      "cannot_connect": "Cannot reach the Pi-hole web/API server. Check the host, port, certificate, and API availability; DNS can still work while the API is unavailable.",
+      "invalid_auth": "Authentication failed. Use a Pi-hole v6 web/application password or a pre-v6 API token, as appropriate.",
+      "invalid_response": "Pi-hole returned an unsupported, invalid, or busy API response. Check the API mode and Pi-hole web/API server."
     }
   }
 }

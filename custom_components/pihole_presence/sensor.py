@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -20,8 +21,14 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN
 from .coordinator import PiholeUpdateCoordinator
 
+# HA 2023 uses mutable description dataclasses. Newer HA uses frozen
+# descriptions (or a metaclass accepting either); match the base class.
+_DESCRIPTION_FROZEN = getattr(
+    getattr(SensorEntityDescription, "__dataclass_params__", None), "frozen", True
+)
 
-@dataclass(frozen=True, kw_only=True)
+
+@dataclass(frozen=_DESCRIPTION_FROZEN, kw_only=True)
 class PiholeHostSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], int | float | None]
     extra_attributes_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
@@ -39,7 +46,13 @@ def _get(data: dict[str, Any], *path: str) -> Any:
 def _number(value: Any, precision: int = 2) -> int | float | None:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
-    rounded = round(float(value), precision)
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    if not math.isfinite(number):
+        return None
+    rounded = round(number, precision)
     if rounded.is_integer():
         return int(rounded)
     return rounded
@@ -110,6 +123,8 @@ def _memory_attributes(metrics: dict[str, Any]) -> dict[str, Any]:
 
 
 def _temperature_value(metrics: dict[str, Any]) -> int | float | None:
+    if _get(metrics, "sensors", "unit") not in ("C", "F", "K"):
+        return None
     return _number(_get(metrics, "sensors", "cpu_temp"), 1)
 
 
@@ -210,6 +225,8 @@ class PiholeHostSensor(CoordinatorEntity[PiholeUpdateCoordinator], SensorEntity)
             return UnitOfTemperature.FAHRENHEIT
         if unit == "C":
             return UnitOfTemperature.CELSIUS
+        if unit == "K":
+            return UnitOfTemperature.KELVIN
         return self.entity_description.native_unit_of_measurement
 
     @property
