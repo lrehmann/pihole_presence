@@ -120,6 +120,8 @@ ruff format --check custom_components tests
 
 Use the Python version corresponding to that Home Assistant release; the CI matrix documents the combinations. The setuptools constraint is needed by the oldest Home Assistant release's test environment, not by the integration. Tests do not contact a live Home Assistant or Pi-hole.
 
+For older releases, install with the matching Home Assistant `homeassistant/package_constraints.txt`, as CI does. The 2024.11.3 test environment also needs `josepy<2` because its ACME dependency uses an API removed in josepy 2. These constraints only affect test environments; this integration adds no runtime packages to Home Assistant.
+
 ## License
 
 MIT
