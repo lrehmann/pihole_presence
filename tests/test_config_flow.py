@@ -148,6 +148,7 @@ async def test_duplicate_check_uses_effective_host_from_options(hass, monkeypatc
 async def test_reauth_preserves_entry_and_options(hass, monkeypatch):
     entry = SimpleNamespace(
         entry_id="existing",
+        title="Pi-hole Presence",
         data={"host": "http://pi.hole", "away_time": 900},
         options={"scan_interval": 120},
     )

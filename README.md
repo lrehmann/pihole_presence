@@ -112,13 +112,13 @@ To upgrade an existing installation, update the integration in HACS and restart 
 Install the Home Assistant version you want to test and the test tools in an isolated environment:
 
 ```sh
-python -m pip install "homeassistant==2026.10.4" "pytest>=8,<9" "pytest-asyncio==1.3.0" "setuptools<81" ruff
+python -m pip install "homeassistant==2026.10.4" "pytest>=8,<9" "pytest-asyncio==1.3.0" ruff
 python -m pytest -q
 ruff check custom_components tests
 ruff format --check custom_components tests
 ```
 
-Use the Python version corresponding to that Home Assistant release; the CI matrix documents the combinations. The setuptools constraint is needed by the oldest Home Assistant release's test environment, not by the integration. Tests do not contact a live Home Assistant or Pi-hole.
+Use the Python version corresponding to that Home Assistant release; the CI matrix documents the combinations. The 2023.1.7 test environment additionally needs `setuptools<81` for its `pkg_resources` import. Tests do not contact a live Home Assistant or Pi-hole.
 
 For older releases, install with the matching Home Assistant `homeassistant/package_constraints.txt`, as CI does. The 2024.11.3 test environment also needs `josepy<2` because its ACME dependency uses an API removed in josepy 2. These constraints only affect test environments; this integration adds no runtime packages to Home Assistant.
 
